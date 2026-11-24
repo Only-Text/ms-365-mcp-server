@@ -201,6 +201,14 @@ class MicrosoftGraphServer {
 
       const app = express();
       app.set('trust proxy', true);
+      // Account aliases: /mcp/<account> is served exactly like /mcp. Clients such
+      // as Claude Code treat connectors with the same host and path as duplicates
+      // (a query string does not count), so each mailbox needs its own path.
+      app.use((req, _res, next) => {
+        req.url = req.url.replace(/^\/mcp\/[a-z0-9-]+\/?(?=\?|$)/i, '/mcp');
+        next();
+      });
+
       app.use(express.json());
       app.use(express.urlencoded({ extended: true }));
 
@@ -377,6 +385,13 @@ class MicrosoftGraphServer {
             microsoftAuthUrl.searchParams.set(param, value);
           }
         });
+
+        // Several mailboxes sign in through the same app registration. Without this
+        // Microsoft silently reuses the browser's current session, which links a
+        // connector to the wrong mailbox.
+        if (!microsoftAuthUrl.searchParams.has('prompt')) {
+          microsoftAuthUrl.searchParams.set('prompt', 'select_account');
+        }
 
         // Two-leg PKCE: if the client sent a code_challenge, store it and generate
         // a separate PKCE pair for the server↔Microsoft leg
